@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Wallet } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
@@ -10,6 +11,7 @@ import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
 
 export function WalletConnectModal() {
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [walletAddress, setWalletAddress] = useState('')
   const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.PUBLIC)
@@ -31,13 +33,10 @@ export function WalletConnectModal() {
     setIsConnecting(true)
 
     try {
-      // Simulate wallet connection
-      const walletResponse = await api.auth.connectWallet()
+      // Connect wallet with the provided address
+      const walletResponse = await api.auth.connectWallet(walletAddress)
       if (walletResponse.success && walletResponse.data) {
-        setWallet({
-          ...walletResponse.data,
-          address: walletAddress,
-        })
+        setWallet(walletResponse.data)
         setIsAuthenticated(true)
         setRole(selectedRole)
 
@@ -50,6 +49,17 @@ export function WalletConnectModal() {
         toast.success('Wallet connected successfully!')
         setShowWalletModal(false)
         setWalletAddress('')
+        
+        // Navigate to appropriate dashboard based on role
+        if (selectedRole === UserRole.ADMIN) {
+          navigate('/admin')
+        } else if (selectedRole === UserRole.STUDENT) {
+          navigate('/dashboard')
+        } else {
+          navigate('/verify')
+        }
+      } else {
+        toast.error(walletResponse.error?.message || 'Failed to connect wallet')
       }
     } catch (error) {
       toast.error('Failed to connect wallet')

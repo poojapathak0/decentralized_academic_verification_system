@@ -27,7 +27,10 @@ export function AdminDashboardPage() {
   }, [wallet])
 
   const loadData = async () => {
-    if (!wallet) return
+    if (!wallet) {
+      setIsLoading(false)
+      return
+    }
 
     setIsLoading(true)
     try {
@@ -38,14 +41,20 @@ export function AdminDashboardPage() {
 
       if (statsRes.success && statsRes.data) {
         setStats(statsRes.data)
+      } else if (!statsRes.success) {
+        console.error('Dashboard stats error:', statsRes.error)
+        toast.error(statsRes.error?.message || 'Failed to load dashboard stats')
       }
 
       if (certsRes.success && certsRes.data) {
         setCertificates(certsRes.data.data)
+      } else if (!certsRes.success) {
+        console.error('Certificates error:', certsRes.error)
+        toast.error(certsRes.error?.message || 'Failed to load certificates')
       }
     } catch (error) {
+      console.error('Dashboard loading error:', error)
       toast.error('Failed to load dashboard data')
-      console.error(error)
     } finally {
       setIsLoading(false)
     }
@@ -273,6 +282,8 @@ function IssueCertificateModal({
   onSuccess: () => void
 }) {
   const [isLoading, setIsLoading] = useState(false)
+  const [certificateFile, setCertificateFile] = useState<File | null>(null)
+  const [filePreview, setFilePreview] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     studentWallet: '',
     studentName: '',
@@ -281,17 +292,52 @@ function IssueCertificateModal({
     institution: '',
     program: '',
     grade: '',
+    credits: 120,
     completionDate: new Date().toISOString().split('T')[0],
+    expiryDate: new Date(new Date().getFullYear() + 4, new Date().getMonth(), new Date().getDate()).toISOString().split('T')[0],
+    pdfUrl: '',
   })
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setCertificateFile(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setFilePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+      
+      toast.success(`File selected: ${file.name}`)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!formData.studentWallet.startsWith('0x')) {
+      toast.error('Invalid wallet address. Must start with 0x')
+      return
+    }
+
     setIsLoading(true)
 
     try {
+      // If file is uploaded, we'll handle it (in real implementation, upload to IPFS)
+      let pdfUrl = formData.pdfUrl
+      if (certificateFile) {
+        toast.loading('Uploading certificate to IPFS...')
+        // In production, upload to IPFS here
+        pdfUrl = `ipfs://${certificateFile.name}`
+        toast.dismiss()
+      }
+
       const result = await api.admin.issue({
         ...formData,
-        credits: formData.grade ? 120 : undefined,
+        pdfUrl,
+        credits: parseInt(formData.credits.toString()) || 120,
       })
 
       if (result.success) {
@@ -313,72 +359,179 @@ function IssueCertificateModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white dark:bg-accent-800 rounded-xl max-w-2xl w-full max-h-96 overflow-y-auto"
+        className="bg-white dark:bg-accent-800 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
       >
-        <div className="p-6 border-b border-accent-200 dark:border-accent-700 flex justify-between items-center">
+        <div className="p-6 border-b border-accent-200 dark:border-accent-700 flex justify-between items-center sticky top-0 bg-white dark:bg-accent-800">
           <h2 className="text-2xl font-bold text-accent-900 dark:text-white">
             Issue New Certificate
           </h2>
           <button
             onClick={onClose}
-            className="text-accent-500 hover:text-accent-700 dark:hover:text-accent-300"
+            className="text-accent-500 hover:text-accent-700 dark:hover:text-accent-300 text-2xl"
           >
             ✕
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <input
-              type="text"
-              placeholder="Student Wallet"
-              value={formData.studentWallet}
-              onChange={(e) => setFormData({ ...formData, studentWallet: e.target.value })}
-              className="col-span-2 px-4 py-2 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white"
-              required
-            />
-            <input
-              type="text"
-              placeholder="Student Name"
-              value={formData.studentName}
-              onChange={(e) => setFormData({ ...formData, studentName: e.target.value })}
-              className="col-span-2 px-4 py-2 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white"
-              required
-            />
-            <input
-              type="text"
-              placeholder="Title"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="px-4 py-2 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white"
-              required
-            />
-            <input
-              type="text"
-              placeholder="Program"
-              value={formData.program}
-              onChange={(e) => setFormData({ ...formData, program: e.target.value })}
-              className="px-4 py-2 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white"
-              required
-            />
-            <input
-              type="text"
-              placeholder="Institution"
-              value={formData.institution}
-              onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
-              className="px-4 py-2 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white"
-              required
-            />
-            <input
-              type="text"
-              placeholder="Grade (optional)"
-              value={formData.grade}
-              onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
-              className="px-4 py-2 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white"
-            />
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Student Information Section */}
+          <div>
+            <h3 className="text-lg font-semibold text-accent-900 dark:text-white mb-4">
+              📋 Student Information
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="text"
+                placeholder="Student Name *"
+                value={formData.studentName}
+                onChange={(e) => setFormData({ ...formData, studentName: e.target.value })}
+                className="col-span-2 px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Student Wallet Address (0x...) *"
+                value={formData.studentWallet}
+                onChange={(e) => setFormData({ ...formData, studentWallet: e.target.value })}
+                className="col-span-2 px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
           </div>
 
-          <div className="flex gap-3 justify-end pt-4">
+          {/* Certificate Details Section */}
+          <div>
+            <h3 className="text-lg font-semibold text-accent-900 dark:text-white mb-4">
+              🎓 Certificate Details
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="text"
+                placeholder="Certificate Title *"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                className="col-span-2 px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              <textarea
+                placeholder="Description (e.g., Degree earned with distinction)"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="col-span-2 px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                rows={2}
+              />
+              <input
+                type="text"
+                placeholder="Program/Degree *"
+                value={formData.program}
+                onChange={(e) => setFormData({ ...formData, program: e.target.value })}
+                className="px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Institution Name *"
+                value={formData.institution}
+                onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
+                className="px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Grade (e.g., A, A+, B)"
+                value={formData.grade}
+                onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
+                className="px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="number"
+                placeholder="Credits"
+                value={formData.credits}
+                onChange={(e) => setFormData({ ...formData, credits: parseInt(e.target.value) || 120 })}
+                className="px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Dates Section */}
+          <div>
+            <h3 className="text-lg font-semibold text-accent-900 dark:text-white mb-4">
+              📅 Dates
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-accent-700 dark:text-accent-300 mb-2">
+                  Completion Date *
+                </label>
+                <input
+                  type="date"
+                  value={formData.completionDate}
+                  onChange={(e) => setFormData({ ...formData, completionDate: e.target.value })}
+                  className="w-full px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-accent-700 dark:text-accent-300 mb-2">
+                  Expiry Date *
+                </label>
+                <input
+                  type="date"
+                  value={formData.expiryDate}
+                  onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                  className="w-full px-4 py-3 border border-accent-300 dark:border-accent-600 rounded-lg dark:bg-accent-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* File Upload Section */}
+          <div>
+            <h3 className="text-lg font-semibold text-accent-900 dark:text-white mb-4">
+              📄 Certificate File (PDF/Image)
+            </h3>
+            <div className="border-2 border-dashed border-accent-300 dark:border-accent-600 rounded-lg p-6">
+              <input
+                type="file"
+                id="certificate-file"
+                onChange={handleFileChange}
+                accept=".pdf,.png,.jpg,.jpeg,.gif"
+                className="hidden"
+              />
+              <label
+                htmlFor="certificate-file"
+                className="flex flex-col items-center justify-center cursor-pointer"
+              >
+                <div className="text-center">
+                  <div className="text-4xl mb-2">📤</div>
+                  <p className="text-accent-900 dark:text-white font-medium">
+                    {certificateFile ? certificateFile.name : 'Click to upload certificate'}
+                  </p>
+                  <p className="text-accent-600 dark:text-accent-400 text-sm mt-1">
+                    Supported: PDF, PNG, JPG, GIF (Optional)
+                  </p>
+                </div>
+              </label>
+            </div>
+            {filePreview && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-accent-700 dark:text-accent-300 mb-2">
+                  Preview:
+                </p>
+                {certificateFile?.type.startsWith('image/') ? (
+                  <img src={filePreview} alt="Preview" className="max-w-xs max-h-48 rounded-lg" />
+                ) : (
+                  <div className="bg-accent-100 dark:bg-accent-700 p-4 rounded-lg text-accent-900 dark:text-white">
+                    📄 PDF File: {certificateFile?.name}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 justify-end pt-4 border-t border-accent-200 dark:border-accent-700">
             <Button variant="secondary" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>

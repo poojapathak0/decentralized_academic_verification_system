@@ -34,6 +34,7 @@ router.post(
 );
 
 router.get("/admin/all", CertificateController.getAllAdminCertificates);
+router.get("/admin/stats", CertificateController.getDashboardStats);
 
 // Public Verifier Routes
 router.get("/verify/:certificateId", CertificateController.verifyCertificate);

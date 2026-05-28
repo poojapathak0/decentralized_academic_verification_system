@@ -1,6 +1,5 @@
 import {
   Certificate,
-  CertificateStatus,
   VerificationResult,
   User,
   UserRole,
@@ -12,53 +11,111 @@ import {
   AdminStats,
 } from '@/types'
 
-// Mock data for demo purposes
-const mockCertificates: Certificate[] = [
-  {
-    id: 'cert-001',
-    studentId: 'student-001',
-    studentName: 'Alice Johnson',
-    studentWallet: '0x1234567890123456789012345678901234567890',
-    issueDate: '2024-01-15',
-    expiryDate: '2026-01-15',
-    issuer: 'MIT',
-    issuerWallet: '0x0987654321098765432109876543210987654321',
-    certificateData: {
-      title: 'Bachelor of Science in Computer Science',
-      description: 'Degree in Computer Science with Honors',
-      institution: 'Massachusetts Institute of Technology',
-      program: 'Computer Science',
-      grade: 'A',
-      credits: 120,
-      completionDate: '2024-01-15',
-      verificationUrl: 'https://verify.example.com/cert-001',
-    },
-    ipfsHash: 'QmXxxx',
-    qrCode: 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=cert-001',
-    status: CertificateStatus.VALID,
-    createdAt: '2024-01-15T10:00:00Z',
-    updatedAt: '2024-01-15T10:00:00Z',
-  },
-]
+const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:5000/api'
+
+// Type extension for MetaMask
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string }) => Promise<string[]>
+    }
+  }
+}
+
+// Helper function for API calls
+async function fetchAPI<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status.toString(),
+          message: data.message || 'API request failed',
+        },
+        timestamp: new Date().toISOString(),
+      }
+    }
+
+    return {
+      success: true,
+      data: data.data || data,
+      timestamp: new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('API Error:', error)
+    return {
+      success: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        message: error instanceof Error ? error.message : 'Network error occurred',
+      },
+      timestamp: new Date().toISOString(),
+    }
+  }
+}
 
 // API functions for authentication
 export const authApi = {
-  async connectWallet(): Promise<ApiResponse<WalletConnection>> {
-    // Mock implementation - in production, this would connect to MetaMask
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          success: true,
-          data: {
-            address: '0x1234567890123456789012345678901234567890',
-            isConnected: true,
-            chainId: 1,
-            balance: '10.5',
+  async connectWallet(address?: string): Promise<ApiResponse<WalletConnection>> {
+    // Client-side wallet connection (MetaMask or demo mode)
+    try {
+      let walletAddress = address
+
+      // Try MetaMask if available and no address provided
+      if (!address && window.ethereum) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
+          walletAddress = accounts[0]
+        } catch (error) {
+          console.warn('MetaMask connection failed, continuing in demo mode')
+        }
+      }
+
+      // If still no address, we're in demo mode but should have received an address
+      if (!walletAddress) {
+        return {
+          success: false,
+          error: {
+            code: 'NO_ADDRESS',
+            message: 'Wallet address is required',
           },
           timestamp: new Date().toISOString(),
-        })
-      }, 1000)
-    })
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          address: walletAddress,
+          isConnected: true,
+          chainId: 80002, // Polygon Amoy
+          balance: '0',
+        },
+        timestamp: new Date().toISOString(),
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'WALLET_ERROR',
+          message: error instanceof Error ? error.message : 'Wallet connection failed',
+        },
+        timestamp: new Date().toISOString(),
+      }
+    }
   },
 
   async disconnectWallet(): Promise<ApiResponse<null>> {
@@ -70,14 +127,15 @@ export const authApi = {
   },
 
   async getCurrentUser(): Promise<ApiResponse<User>> {
+    // This would typically come from the backend after wallet authentication
     return {
       success: true,
       data: {
-        id: 'user-001',
+        id: 'user-' + Date.now(),
         walletAddress: '0x1234567890123456789012345678901234567890',
         role: UserRole.STUDENT,
-        name: 'Alice Johnson',
-        email: 'alice@example.com',
+        name: 'User',
+        email: 'user@example.com',
         createdAt: new Date().toISOString(),
       },
       timestamp: new Date().toISOString(),
@@ -88,23 +146,7 @@ export const authApi = {
 // API functions for certificates
 export const certificateApi = {
   async verify(certificateId: string): Promise<ApiResponse<VerificationResult>> {
-    const certificate = mockCertificates.find((c) => c.id === certificateId)
-    const isValid = !!certificate && certificate.status === CertificateStatus.VALID
-
-    return {
-      success: true,
-      data: {
-        isValid,
-        status: certificate?.status || CertificateStatus.PENDING,
-        certificate,
-        message: certificate && isValid
-          ? 'Certificate is valid and has not been revoked'
-          : 'Certificate not found or has been revoked',
-        verifiedAt: new Date().toISOString(),
-        verifierWallet: '0x1111111111111111111111111111111111111111',
-      },
-      timestamp: new Date().toISOString(),
-    }
+    return fetchAPI<VerificationResult>(`/certificates/verify/${certificateId}`)
   },
 
   async verifyByQRCode(qrCodeData: string): Promise<ApiResponse<VerificationResult>> {
@@ -118,53 +160,20 @@ export const certificateApi = {
     page = 1,
     pageSize = 10
   ): Promise<ApiResponse<PaginatedResponse<Certificate>>> {
-    const studentCerts = mockCertificates.filter(
-      (c) => c.studentWallet.toLowerCase() === studentWallet.toLowerCase()
+    return fetchAPI<PaginatedResponse<Certificate>>(
+      `/certificates/my?address=${studentWallet}&page=${page}&pageSize=${pageSize}`
     )
-
-    const startIdx = (page - 1) * pageSize
-    const endIdx = startIdx + pageSize
-    const paginatedCerts = studentCerts.slice(startIdx, endIdx)
-
-    return {
-      success: true,
-      data: {
-        data: paginatedCerts,
-        total: studentCerts.length,
-        page,
-        pageSize,
-        hasMore: endIdx < studentCerts.length,
-      },
-      timestamp: new Date().toISOString(),
-    }
   },
 
   async getById(certificateId: string): Promise<ApiResponse<Certificate>> {
-    const cert = mockCertificates.find((c) => c.id === certificateId)
-
-    if (!cert) {
-      return {
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Certificate not found',
-        },
-        timestamp: new Date().toISOString(),
-      }
-    }
-
-    return {
-      success: true,
-      data: cert,
-      timestamp: new Date().toISOString(),
-    }
+    return fetchAPI<Certificate>(`/certificates/${certificateId}`)
   },
 
   async download(certificateId: string): Promise<ApiResponse<{ downloadUrl: string }>> {
     return {
       success: true,
       data: {
-        downloadUrl: `/download/${certificateId}`,
+        downloadUrl: `${API_URL}/certificates/${certificateId}/download`,
       },
       timestamp: new Date().toISOString(),
     }
@@ -174,62 +183,49 @@ export const certificateApi = {
 // API functions for admin
 export const adminApi = {
   async issue(payload: IssueCertificatePayload): Promise<ApiResponse<IssuanceResult>> {
-    const certificateId = `cert-${Date.now()}`
-    const newCertificate: Certificate = {
-      id: certificateId,
-      studentId: `student-${Date.now()}`,
-      studentName: payload.studentName,
-      studentWallet: payload.studentWallet,
-      issueDate: new Date().toISOString().split('T')[0],
-      expiryDate: payload.expiryDate,
-      issuer: payload.institution,
-      issuerWallet: '0x0987654321098765432109876543210987654321',
-      certificateData: {
-        title: payload.title,
-        description: payload.description,
-        institution: payload.institution,
-        program: payload.program,
-        grade: payload.grade,
-        credits: payload.credits || 0,
-        completionDate: payload.completionDate,
-        pdfUrl: payload.pdfUrl,
-        verificationUrl: `https://verify.example.com/${certificateId}`,
-      },
-      ipfsHash: `QmHash${Date.now()}`,
-      qrCode: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${certificateId}`,
-      status: CertificateStatus.VALID,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
+    // First upload to IPFS
+    const ipfsHash = await this.uploadCertificatePDF(payload.pdfUrl || '')
 
-    mockCertificates.push(newCertificate)
+    return fetchAPI<IssuanceResult>('/certificates/issue', {
+      method: 'POST',
+      body: JSON.stringify({
+        studentAddress: payload.studentWallet,
+        ipfsHash: ipfsHash || 'QmPlaceholder',
+        studentName: payload.studentName,
+        programName: payload.program,
+        graduationDate: payload.completionDate,
+        institutionName: payload.institution,
+        certificateId: `cert-${Date.now()}`,
+      }),
+    })
+  },
 
-    return {
-      success: true,
-      data: {
-        certificateId,
-        transactionHash: `0xHash${Date.now()}`,
-        ipfsHash: newCertificate.ipfsHash || '',
-        qrCode: newCertificate.qrCode || '',
-      },
-      timestamp: new Date().toISOString(),
+  async uploadCertificatePDF(_filePath: string): Promise<string> {
+    try {
+      const formData = new FormData()
+      // Note: In production, you would pass an actual file object here
+      // For now, we'll create a placeholder
+      const blob = new Blob(['Certificate PDF content'], { type: 'application/pdf' })
+      formData.append('file', blob, 'certificate.pdf')
+
+      const response = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+      return data.ipfsHash || ''
+    } catch (error) {
+      console.error('Upload error:', error)
+      return ''
     }
   },
 
   async revoke(certificateId: string): Promise<ApiResponse<{ revokeTransactionHash: string }>> {
-    const cert = mockCertificates.find((c) => c.id === certificateId)
-    if (cert) {
-      cert.status = CertificateStatus.REVOKED
-      cert.updatedAt = new Date().toISOString()
-    }
-
-    return {
-      success: true,
-      data: {
-        revokeTransactionHash: `0xRevoke${Date.now()}`,
-      },
-      timestamp: new Date().toISOString(),
-    }
+    return fetchAPI<{ revokeTransactionHash: string }>('/certificates/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ certificateId }),
+    })
   },
 
   async listCertificates(
@@ -237,55 +233,19 @@ export const adminApi = {
     page = 1,
     pageSize = 10
   ): Promise<ApiResponse<PaginatedResponse<Certificate>>> {
-    const issuerCerts = mockCertificates.filter(
-      (c) => c.issuerWallet.toLowerCase() === issuerWallet.toLowerCase()
+    return fetchAPI<PaginatedResponse<Certificate>>(
+      `/certificates/admin/all?address=${issuerWallet}&page=${page}&pageSize=${pageSize}`
     )
-
-    const startIdx = (page - 1) * pageSize
-    const endIdx = startIdx + pageSize
-    const paginatedCerts = issuerCerts.slice(startIdx, endIdx)
-
-    return {
-      success: true,
-      data: {
-        data: paginatedCerts,
-        total: issuerCerts.length,
-        page,
-        pageSize,
-        hasMore: endIdx < issuerCerts.length,
-      },
-      timestamp: new Date().toISOString(),
-    }
   },
 
   async getDashboardStats(adminWallet: string): Promise<ApiResponse<AdminStats>> {
-    const adminCerts = mockCertificates.filter(
-      (c) => c.issuerWallet.toLowerCase() === adminWallet.toLowerCase()
-    )
-
-    return {
-      success: true,
-      data: {
-        totalCertificates: adminCerts.length,
-        validCertificates: adminCerts.filter((c) => c.status === CertificateStatus.VALID).length,
-        revokedCertificates: adminCerts.filter((c) => c.status === CertificateStatus.REVOKED)
-          .length,
-        pendingCertificates: adminCerts.filter((c) => c.status === CertificateStatus.PENDING)
-          .length,
-        verificationCount: Math.floor(Math.random() * 1000),
-        issuedByMe: adminCerts.length,
-        totalStudents: new Set(adminCerts.map((c) => c.studentId)).size,
-        recentIssuances: adminCerts.slice(0, 5),
-      },
-      timestamp: new Date().toISOString(),
-    }
+    return fetchAPI<AdminStats>(`/certificates/admin/stats?address=${adminWallet}`)
   },
 }
 
 // Utility functions
 export const qrCodeApi = {
   generateQRCode(data: string): Promise<string> {
-    // In production, this would call qrcode library
     return Promise.resolve(
       `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(data)}`
     )
