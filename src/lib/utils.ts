@@ -92,11 +92,11 @@ export function certificateToCSV(certificates: Certificate[]): string {
   const rows = certificates.map((cert) => [
     cert.id,
     cert.studentName,
-    cert.studentWallet,
-    cert.certificateData.program,
-    cert.certificateData.institution,
+    cert.studentWallet || cert.studentAddress || 'N/A',
+    cert.certificateData?.program || cert.programName || 'N/A',
+    cert.certificateData?.institution || cert.institutionName || 'N/A',
     formatDate(cert.issueDate),
-    cert.status,
+    cert.status || 'issued',
   ])
 
   const csvContent = [

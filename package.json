@@ -13,7 +13,8 @@
     "node:contracts": "cross-env TS_NODE_PROJECT=tsconfig.hardhat.json hardhat node",
     "deploy:hardhat": "cross-env TS_NODE_PROJECT=tsconfig.hardhat.json hardhat run scripts/deploy.ts --network hardhat",
     "deploy:local": "cross-env TS_NODE_PROJECT=tsconfig.hardhat.json hardhat run scripts/deploy.ts --network localhost",
-    "deploy:amoy": "cross-env TS_NODE_PROJECT=tsconfig.hardhat.json hardhat run scripts/deploy.ts --network amoy"
+    "deploy:amoy": "cross-env TS_NODE_PROJECT=tsconfig.hardhat.json hardhat run scripts/deploy.ts --network amoy",
+    "grant-admin-role": "cross-env TS_NODE_PROJECT=tsconfig.hardhat.json hardhat run scripts/grantAdminRole.ts --network amoy"
   },
   "dependencies": {
     "react": "^18.2.0",

@@ -1,4 +1,4 @@
-import { Certificate } from '@/types'
+import { Certificate, CertificateStatus } from '@/types'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -23,7 +23,7 @@ export function CertificateCard({
   onRevoke,
   showActions = true,
 }: CertificateCardProps) {
-  const statusInfo = formatStatus(certificate.status)
+  const statusInfo = formatStatus(certificate.status || CertificateStatus.VALID)
 
   return (
     <motion.div

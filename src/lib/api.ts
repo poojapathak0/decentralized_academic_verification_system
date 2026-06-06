@@ -9,6 +9,7 @@ import {
   IssueCertificatePayload,
   IssuanceResult,
   AdminStats,
+  CertificateStatus,
 } from '@/types'
 
 const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:5000/api'
@@ -39,12 +40,15 @@ async function fetchAPI<T>(
     const data = await response.json()
 
     if (!response.ok) {
+      // Extract error from backend response or create one
+      const error = data.error || {
+        code: response.status.toString(),
+        message: data.message || 'API request failed',
+      }
+      
       return {
         success: false,
-        error: {
-          code: response.status.toString(),
-          message: data.message || 'API request failed',
-        },
+        error,
         timestamp: new Date().toISOString(),
       }
     }
@@ -146,7 +150,44 @@ export const authApi = {
 // API functions for certificates
 export const certificateApi = {
   async verify(certificateId: string): Promise<ApiResponse<VerificationResult>> {
-    return fetchAPI<VerificationResult>(`/certificates/verify/${certificateId}`)
+    const response = await fetchAPI<any>(`/certificates/verify/${certificateId}`)
+    
+    // FIXED: Transform backend response to match frontend VerificationResult type
+    if (response.success && response.data) {
+      const { certificate, isValid } = response.data
+      
+      let status: CertificateStatus = CertificateStatus.VALID
+      let message = 'Certificate is valid and hasn\'t been revoked.'
+      
+      if (certificate?.isRevoked) {
+        status = CertificateStatus.REVOKED
+        message = 'This certificate has been revoked and is no longer valid.'
+      } else if (!isValid) {
+        status = CertificateStatus.REVOKED
+        message = 'Certificate not found or is invalid.'
+      }
+      
+      response.data = {
+        status,
+        certificate: {
+          id: certificate?.certificateId || certificateId,
+          studentName: certificate?.studentName || 'Unknown',
+          issueDate: new Date(certificate?.issueDate * 1000 || Date.now()).toISOString(),
+          expiryDate: certificate?.graduationDate,
+          certificateData: {
+            title: certificate?.certificateId || 'Certificate',
+            description: certificate?.programName || '',
+            institution: certificate?.institutionName || '',
+            program: certificate?.programName || '',
+            completionDate: certificate?.graduationDate || '',
+          },
+          status,
+        },
+        message,
+      } as VerificationResult
+    }
+    
+    return response
   },
 
   async verifyByQRCode(qrCodeData: string): Promise<ApiResponse<VerificationResult>> {
@@ -160,9 +201,20 @@ export const certificateApi = {
     page = 1,
     pageSize = 10
   ): Promise<ApiResponse<PaginatedResponse<Certificate>>> {
-    return fetchAPI<PaginatedResponse<Certificate>>(
-      `/certificates/my?address=${studentWallet}&page=${page}&pageSize=${pageSize}`
+    // FIX: Properly pass address query parameter
+    const response = await fetchAPI<PaginatedResponse<Certificate>>(
+      `/certificates/my?address=${encodeURIComponent(studentWallet)}&page=${page}&pageSize=${pageSize}`
     )
+    
+    // Map data if needed
+    if (response.success && response.data?.data) {
+      response.data.data = response.data.data.map((cert: any) => ({
+        ...cert,
+        status: cert.isRevoked ? 'revoked' : 'valid',
+      }))
+    }
+    
+    return response
   },
 
   async getById(certificateId: string): Promise<ApiResponse<Certificate>> {
@@ -183,42 +235,28 @@ export const certificateApi = {
 // API functions for admin
 export const adminApi = {
   async issue(payload: IssueCertificatePayload): Promise<ApiResponse<IssuanceResult>> {
-    // First upload to IPFS
-    const ipfsHash = await this.uploadCertificatePDF(payload.pdfUrl || '')
+    // FIXED: Use IPFS hash directly (upload already done on frontend)
+    // Generate unique certificate ID if not provided
+    const certificateId = payload.pdfUrl || `cert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
     return fetchAPI<IssuanceResult>('/certificates/issue', {
       method: 'POST',
       body: JSON.stringify({
         studentAddress: payload.studentWallet,
-        ipfsHash: ipfsHash || 'QmPlaceholder',
+        ipfsHash: payload.pdfUrl || 'QmPlaceholder', // IPFS hash from Pinata upload
         studentName: payload.studentName,
         programName: payload.program,
         graduationDate: payload.completionDate,
         institutionName: payload.institution,
-        certificateId: `cert-${Date.now()}`,
+        certificateId: certificateId,
       }),
     })
   },
 
   async uploadCertificatePDF(_filePath: string): Promise<string> {
-    try {
-      const formData = new FormData()
-      // Note: In production, you would pass an actual file object here
-      // For now, we'll create a placeholder
-      const blob = new Blob(['Certificate PDF content'], { type: 'application/pdf' })
-      formData.append('file', blob, 'certificate.pdf')
-
-      const response = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      const data = await response.json()
-      return data.ipfsHash || ''
-    } catch (error) {
-      console.error('Upload error:', error)
-      return ''
-    }
+    // This function is deprecated - upload now happens in frontend before api.admin.issue()
+    console.warn('uploadCertificatePDF is deprecated. Use frontend file upload instead.')
+    return ''
   },
 
   async revoke(certificateId: string): Promise<ApiResponse<{ revokeTransactionHash: string }>> {
@@ -233,9 +271,29 @@ export const adminApi = {
     page = 1,
     pageSize = 10
   ): Promise<ApiResponse<PaginatedResponse<Certificate>>> {
-    return fetchAPI<PaginatedResponse<Certificate>>(
+    const response = await fetchAPI<any>(
       `/certificates/admin/all?address=${issuerWallet}&page=${page}&pageSize=${pageSize}`
     )
+    
+    if (response.success && response.data) {
+      // Transform API response to match Certificate type
+      response.data.data = response.data.data.map((cert: any) => ({
+        ...cert,
+        studentId: cert.studentAddress,
+        studentWallet: cert.studentAddress,
+        issuer: 'Institution',
+        certificateData: {
+          title: cert.certificateId || 'Certificate',
+          description: `${cert.programName} from ${cert.institutionName}`,
+          institution: cert.institutionName,
+          program: cert.programName,
+          completionDate: cert.graduationDate,
+        },
+        status: cert.isRevoked ? 'revoked' : 'valid',
+      }))
+    }
+    
+    return response
   },
 
   async getDashboardStats(adminWallet: string): Promise<ApiResponse<AdminStats>> {

@@ -8,19 +8,29 @@ export enum CertificateStatus {
 
 export interface Certificate {
   id: string
-  studentId: string
+  studentId?: string
+  studentAddress?: string
   studentName: string
-  studentWallet: string
+  studentWallet?: string
   issueDate: string
   expiryDate?: string
-  issuer: string
-  issuerWallet: string
+  issuer?: string
+  issuerWallet?: string
   certificateData: CertificateMetadata
   ipfsHash?: string
   qrCode?: string
-  status: CertificateStatus
-  createdAt: string
-  updatedAt: string
+  status?: CertificateStatus
+  createdAt?: string
+  updatedAt?: string
+  // Backend API fields
+  programName?: string
+  graduationDate?: string
+  institutionName?: string
+  certificateId?: string
+  blockNumber?: number
+  transactionHash?: string
+  isTestMode?: boolean
+  hash?: string
 }
 
 export interface CertificateMetadata {

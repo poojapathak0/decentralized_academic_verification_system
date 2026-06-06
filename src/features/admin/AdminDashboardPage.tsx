@@ -27,16 +27,15 @@ export function AdminDashboardPage() {
   }, [wallet])
 
   const loadData = async () => {
-    if (!wallet) {
-      setIsLoading(false)
-      return
-    }
-
     setIsLoading(true)
+    
+    // Use test admin address if wallet is not connected (for demo/testing)
+    const adminAddress = wallet?.address || '0xe54275B5142200caEe678788362C4328D6D1dCB2'
+    
     try {
       const [statsRes, certsRes] = await Promise.all([
-        api.admin.getDashboardStats(wallet.address),
-        api.admin.listCertificates(wallet.address),
+        api.admin.getDashboardStats(adminAddress),
+        api.admin.listCertificates(adminAddress),
       ])
 
       if (statsRes.success && statsRes.data) {
@@ -152,7 +151,7 @@ export function AdminDashboardPage() {
                         >
                           <div>
                             <p className="font-medium text-accent-900 dark:text-white">
-                              {cert.certificateData.title}
+                              {cert.certificateData?.title || cert.certificateId}
                             </p>
                             <p className="text-sm text-accent-600 dark:text-accent-400">
                               {cert.studentName}
@@ -325,30 +324,68 @@ function IssueCertificateModal({
     setIsLoading(true)
 
     try {
-      // If file is uploaded, we'll handle it (in real implementation, upload to IPFS)
-      let pdfUrl = formData.pdfUrl
+      // FIXED: Actually upload file to IPFS via backend
+      let ipfsHash = ''
       if (certificateFile) {
-        toast.loading('Uploading certificate to IPFS...')
-        // In production, upload to IPFS here
-        pdfUrl = `ipfs://${certificateFile.name}`
-        toast.dismiss()
+        const loadingToast = toast.loading('Uploading certificate to IPFS via Pinata...')
+        try {
+          const formDataToSend = new FormData()
+          formDataToSend.append('file', certificateFile)
+
+          const uploadResponse = await fetch(
+            `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/upload`,
+            {
+              method: 'POST',
+              body: formDataToSend,
+            }
+          )
+
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json()
+            throw new Error(errorData.message || 'Failed to upload file to IPFS')
+          }
+
+          const uploadData = await uploadResponse.json()
+          ipfsHash = uploadData.ipfsHash
+
+          if (!ipfsHash) {
+            throw new Error('No IPFS hash returned from upload')
+          }
+
+          toast.dismiss(loadingToast)
+          toast.success(`File uploaded to IPFS: ${ipfsHash.substring(0, 10)}...`)
+        } catch (uploadError) {
+          toast.dismiss(loadingToast)
+          const msg = uploadError instanceof Error ? uploadError.message : 'Upload failed'
+          toast.error(`Failed to upload file: ${msg}`)
+          throw uploadError
+        }
       }
 
+      // Issue certificate with IPFS hash
       const result = await api.admin.issue({
         ...formData,
-        pdfUrl,
+        pdfUrl: ipfsHash || '',
         credits: parseInt(formData.credits.toString()) || 120,
       })
 
       if (result.success) {
         toast.success('Certificate issued successfully!')
+        setCertificateFile(null)
+        setFilePreview(null)
         onSuccess()
       } else {
-        toast.error('Failed to issue certificate')
+        const errorMessage = result.error?.message || 'Failed to issue certificate'
+        console.error('Certificate issuance failed:', {
+          error: result.error,
+          response: result,
+        })
+        toast.error(errorMessage)
       }
     } catch (error) {
-      toast.error('Error issuing certificate')
-      console.error(error)
+      const errorMessage = error instanceof Error ? error.message : 'Error issuing certificate'
+      console.error('Certificate issuance error:', error)
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }

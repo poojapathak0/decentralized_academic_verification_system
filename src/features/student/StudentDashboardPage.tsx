@@ -26,13 +26,28 @@ export function StudentDashboardPage() {
   }, [wallet])
 
   const loadCertificates = async () => {
-    if (!wallet) return
-
     setIsLoading(true)
+    
+    if (!wallet) {
+      setIsLoading(false)
+      return
+    }
+
     try {
       const result = await api.certificates.getByStudent(wallet.address)
       if (result.success && result.data) {
-        setCertificates(result.data.data)
+        // FIXED: Ensure status is properly set from isRevoked flag
+        const certs = result.data.data.map((cert: any) => ({
+          ...cert,
+          status: cert.status || (cert.isRevoked ? 'revoked' : 'valid'),
+        }))
+        setCertificates(certs)
+        
+        // Check for revoked certificates and notify user
+        const revokedCerts = certs.filter((c: any) => c.status === 'revoked' || c.isRevoked)
+        if (revokedCerts.length > 0) {
+          toast.error(`⚠️ ${revokedCerts.length} certificate(s) have been revoked by your institution`)
+        }
       }
     } catch (error) {
       toast.error('Failed to load certificates')
@@ -183,10 +198,10 @@ export function StudentDashboardPage() {
                         >
                           <div>
                             <p className="font-medium text-accent-900 dark:text-white">
-                              {cert.certificateData.title}
+                              {cert.certificateData?.title || 'Certificate'}
                             </p>
                             <p className="text-xs text-accent-500 dark:text-accent-400">
-                              {cert.certificateData.institution}
+                              {cert.certificateData?.institution || 'N/A'}
                             </p>
                           </div>
                           <Badge variant="success">Valid</Badge>
@@ -320,14 +335,14 @@ function ShareCertificateModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Share Certificate"
-      description={`Share your ${certificate.certificateData.title} certificate`}
+      description={`Share your ${certificate.certificateData?.title || 'certificate'} certificate`}
       size="md"
     >
       <div className="space-y-6">
         {/* Certificate Info */}
         <div className="bg-accent-50 dark:bg-accent-700 rounded-lg p-4">
           <p className="text-sm text-accent-600 dark:text-accent-400 mb-1">
-            {certificate.certificateData.title}
+            {certificate.certificateData?.title || 'Certificate'}
           </p>
           <p className="text-lg font-bold text-accent-900 dark:text-white">
             {certificate.studentName}

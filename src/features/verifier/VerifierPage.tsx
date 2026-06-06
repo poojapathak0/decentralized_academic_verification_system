@@ -186,25 +186,25 @@ function VerificationResultCard({ result }: { result: VerificationResult }) {
           >
             <h4 className="font-bold text-accent-900 dark:text-white mb-4">Certificate Details</h4>
 
-            <DetailRow label="Title" value={cert.certificateData.title} />
+            <DetailRow label="Title" value={cert.certificateData?.title || 'Certificate'} />
             <DetailRow label="Student" value={cert.studentName} />
-            <DetailRow label="Institution" value={cert.certificateData.institution} />
-            <DetailRow label="Program" value={cert.certificateData.program} />
+            <DetailRow label="Institution" value={cert.certificateData?.institution || 'N/A'} />
+            <DetailRow label="Program" value={cert.certificateData?.program || 'N/A'} />
             <DetailRow label="Issue Date" value={formatDate(cert.issueDate)} />
             {cert.expiryDate && (
               <DetailRow label="Expiry Date" value={formatDate(cert.expiryDate)} />
             )}
-            {cert.certificateData.grade && (
+            {cert.certificateData?.grade && (
               <DetailRow label="Grade" value={cert.certificateData.grade} />
             )}
             <DetailRow
               label="Issuer"
-              value={truncateAddress(cert.issuerWallet)}
+              value={truncateAddress(cert.issuerWallet || 'Unknown')}
               mono
             />
             <DetailRow
               label="Student Wallet"
-              value={truncateAddress(cert.studentWallet)}
+              value={truncateAddress(cert.studentWallet || cert.studentAddress || 'Unknown')}
               mono
             />
 
