@@ -110,19 +110,35 @@ export function VerifierPage() {
     setIsLoading(true)
     setVerificationResult(null)
 
-    try {
-      const result = await api.certificates.verify(trimmed)
-      if (result.success) {
-        setVerificationResult(result.data || null)
-      } else {
-        toast.error(result.error?.message || 'Verification failed')
+    // TEMPORARY MOCK — remove before final demo
+    setVerificationResult({
+      isValid: true,
+      status: CertificateStatus.VALID,
+      message: 'Certificate is valid and has not been tampered with.',
+      verifiedAt: new Date().toISOString(),
+      certificate: {
+        id: trimmed,
+        studentName: 'Test Student',
+        issuerWallet: '0xABC0000000000000000000000000000000000123',
+        studentWallet: '0xDEF0000000000000000000000000000000000456',
+        issueDate: '2026-01-15',
+        expiryDate: undefined,
+        issuer: 'Kathmandu University',
+        studentId: 'stu-001',
+        status: CertificateStatus.VALID,
+        createdAt: '2026-01-15',
+        updatedAt: '2026-01-15',
+        certificateData: {
+          title: 'Bachelor of Computer Science',
+          institution: 'Kathmandu University',
+          program: 'B.Sc. CSIT',
+          completionDate: '2026-01-15',
+          description: 'Awarded for completion of B.Sc. CSIT program.',
+        }
       }
-    } catch (error) {
-      toast.error('Network error — is the backend running?')
-      console.error(error)
-    } finally {
-      setIsLoading(false)
-    }
+    })
+    setIsLoading(false)
+    return
   }, [])
 
   // ── Auto-fill + auto-verify when URL has /verify/:certificateId ────────────
