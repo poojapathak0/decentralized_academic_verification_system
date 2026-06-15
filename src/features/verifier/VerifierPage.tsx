@@ -20,44 +20,60 @@ function QRScanner({ onResult, onClose }: { onResult: (text: string) => void; on
   const mountedRef = useRef(true)
 
   useEffect(() => {
-    mountedRef.current = true
+  mountedRef.current = true
 
-    // Dynamically import html5-qrcode so it only loads when scanner is opened
-    import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
-      if (!mountedRef.current) return
+  let scanner: any = null
 
-      scannerRef.current = new Html5QrcodeScanner(
-        'qr-reader',
+  const startScanner = async () => {
+    const { Html5Qrcode } = await import('html5-qrcode')
+
+    if (!mountedRef.current) return
+
+    scanner = new Html5Qrcode('qr-reader')
+    scannerRef.current = scanner
+
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
-      )
-
-      scannerRef.current.render(
         (decodedText: string) => {
-          // QR codes encode a full URL like: http://localhost:5173/verify/cert-001
-          // Extract just the certificate ID from the end
           const parts = decodedText.split('/')
           const certId = parts[parts.length - 1] || decodedText
+          scanner.stop().catch(() => {})
           onResult(certId)
         },
-        (error: any) => {
-          // Suppress the constant "no QR code found" errors from the library
-          if (!error?.includes('No MultiFormat Readers')) {
-            console.warn('QR scan error:', error)
-          }
-        }
+        () => {} // ignore errors
       )
-    }).catch(() => {
-      toast.error('Could not load QR scanner. Run: npm install html5-qrcode')
-    })
-
-    return () => {
-      mountedRef.current = false
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(() => {})
+    } catch (err) {
+      // environment camera failed, try any camera
+      try {
+        await scanner.start(
+          { facingMode: 'user' },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decodedText: string) => {
+            const parts = decodedText.split('/')
+            const certId = parts[parts.length - 1] || decodedText
+            scanner.stop().catch(() => {})
+            onResult(certId)
+          },
+          () => {}
+        )
+      } catch (e) {
+        toast.error('Could not access camera')
       }
     }
-  }, [onResult])
+  }
+
+  startScanner()
+
+  return () => {
+    mountedRef.current = false
+    if (scannerRef.current) {
+      scannerRef.current.stop().catch(() => {})
+      scannerRef.current.clear().catch(() => {})
+    }
+  }
+}, [onResult])
 
   return (
     <motion.div
@@ -82,7 +98,7 @@ function QRScanner({ onResult, onClose }: { onResult: (text: string) => void; on
         </p>
 
         {/* html5-qrcode mounts into this div */}
-        <div id="qr-reader" className="rounded-lg overflow-hidden" />
+        <div id="qr-reader" style={{ width: '100%' }} />
       </div>
     </motion.div>
   )
