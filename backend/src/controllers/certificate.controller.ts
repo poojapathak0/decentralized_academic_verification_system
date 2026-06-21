@@ -143,14 +143,18 @@ export class CertificateController {
 
   static async getMyCertificates(req: Request, res: Response, next: NextFunction) {
     try {
-      // Assuming wallet address is passed in query for now, or extracted from auth token
       const studentAddress = req.query.address as string;
-      
+
       if (!studentAddress) {
+        console.error(`[CertificateController] ❌ Student address is required`);
         return res.status(400).json({ success: false, message: "Student address is required" });
       }
 
+      console.log(`[CertificateController] 📚 Fetching certificates for student: ${studentAddress}`);
+
       const certificates = await BlockchainService.getCertificatesByStudent(studentAddress);
+
+      console.log(`[CertificateController] ✅ Found ${certificates.length} certificates for student ${studentAddress}`);
 
       // FIXED: Properly convert all BigInt values to strings/numbers for JSON serialization
       const mappedCerts = certificates.map((cert: any) => ({
@@ -160,17 +164,20 @@ export class CertificateController {
         ipfsHash: cert.ipfsHash || cert.pdfUrl || '',
         isRevoked: cert.isRevoked || false,
         status: (cert.isRevoked || false) ? 'revoked' : 'valid',
-        issueDate: cert.issueDate ? new Date(Number(cert.issueDate) * 1000).toISOString() : new Date().toISOString(),
-        expiryDate: cert.expiryDate ? new Date(Number(cert.expiryDate) * 1000).toISOString() : new Date().toISOString(),
+        issueDate: cert.issueDate ? (typeof cert.issueDate === 'string' ? cert.issueDate : new Date(Number(cert.issueDate) * 1000).toISOString()) : new Date().toISOString(),
+        expiryDate: cert.expiryDate ? (typeof cert.expiryDate === 'string' ? cert.expiryDate : new Date(Number(cert.expiryDate) * 1000).toISOString()) : new Date().toISOString(),
         certificateData: {
-          studentName: cert.certificateData?.studentName || cert.studentName || '',
-          programName: cert.certificateData?.programName || cert.program || '',
-          institutionName: cert.certificateData?.institutionName || cert.institution || '',
-          graduationDate: cert.certificateData?.graduationDate || cert.completionDate || '',
+          studentName: cert.studentName || '',
+          title: cert.certificateId || 'Certificate',
+          description: cert.programName || '',
+          program: cert.programName || '',
+          institution: cert.institutionName || '',
+          completionDate: cert.graduationDate || '',
           credits: Number(cert.certificateData?.credits || 0),
           grade: cert.certificateData?.grade || '',
         },
         qrCode: cert.qrCode || undefined,
+        pdfUrl: cert.ipfsHash || '',
       }))
 
       res.status(200).json({
@@ -184,52 +191,69 @@ export class CertificateController {
         }
       });
     } catch (error) {
+      console.error(`[CertificateController] ❌ Error in getMyCertificates:`, error);
       next(error);
     }
   }
 
-  // Example placeholder for getting institution's issued certs
+  // Get certificates issued by a specific admin
   static async getAllAdminCertificates(req: Request, res: Response, next: NextFunction) {
     try {
       const adminAddress = req.query.address as string;
-      
+
       if (!adminAddress) {
-        return res.status(400).json({ 
-          success: false, 
-          message: "Admin address is required" 
+        console.error(`[CertificateController] ❌ Admin address is required`);
+        return res.status(400).json({
+          success: false,
+          message: "Admin address is required"
         });
       }
 
-      // FIXED: Return all certificates from both test mode and blockchain
-      // In a real app, filter by admin address stored on blockchain
-      const allTestCerts = (BlockchainService as any).getAllTestCertificates?.() || [];
-      
-      // Try to fetch blockchain certificates too (will use test mode as fallback)
-      let blockchainCerts: any[] = [];
-      try {
-        blockchainCerts = await BlockchainService.getCertificatesByStudent('0x0000000000000000000000000000000000000000');
-      } catch (e) {
-        // Expected to fail - just use test mode
-      }
-      
-      // Combine and deduplicate
-      const allCerts = [
-        ...allTestCerts,
-        ...blockchainCerts.filter((bc: any) => !allTestCerts.find((tc: any) => tc.certificateId === bc.certificateId))
-      ];
-      
+      console.log(`[CertificateController] 📊 Fetching certificates for admin: ${adminAddress}`);
+
+      // Get certificates issued by this admin
+      const allCerts = BlockchainService.getCertificatesByAdmin(adminAddress);
+
+      console.log(`[CertificateController] ✅ Found ${allCerts.length} certificates for admin ${adminAddress}`);
+
+      // Map certificates to proper format
+      const mappedCerts = allCerts.map((cert: any) => ({
+        id: cert.id || cert.certificateId || '',
+        certificateId: cert.certificateId || '',
+        studentAddress: cert.studentAddress || '',
+        studentName: cert.studentName || '',
+        ipfsHash: cert.ipfsHash || cert.pdfUrl || '',
+        isRevoked: cert.isRevoked || false,
+        status: (cert.isRevoked || false) ? 'revoked' : 'valid',
+        issueDate: cert.issueDate ? (typeof cert.issueDate === 'string' ? cert.issueDate : new Date(Number(cert.issueDate) * 1000).toISOString()) : new Date().toISOString(),
+        expiryDate: cert.expiryDate ? (typeof cert.expiryDate === 'string' ? cert.expiryDate : new Date(Number(cert.expiryDate) * 1000).toISOString()) : new Date().toISOString(),
+        certificateData: {
+          studentName: cert.studentName || '',
+          title: cert.certificateId || 'Certificate',
+          description: cert.programName || '',
+          program: cert.programName || '',
+          institution: cert.institutionName || '',
+          completionDate: cert.graduationDate || '',
+          credits: Number(cert.certificateData?.credits || 0),
+          grade: cert.certificateData?.grade || '',
+        },
+        qrCode: cert.qrCode || undefined,
+        adminAddress: cert.adminAddress || adminAddress,
+        isTestMode: cert.isTestMode || false,
+      }))
+
       res.status(200).json({
         success: true,
         data: {
-          data: allCerts,
-          total: allCerts.length,
+          data: mappedCerts,
+          total: mappedCerts.length,
           page: 1,
-          pageSize: 10,
-          totalPages: Math.ceil(allCerts.length / 10),
-          testModeWarning: allCerts.length > 0 ? "Note: If wallet lacks MATIC, certificates are in TEST MODE (not on blockchain). Fund wallet for real blockchain: https://faucet.polygon.technology/" : undefined
+          pageSize: 100,
+          totalPages: 1,
         }
       });
     } catch (error) {
+      console.error(`[CertificateController] ❌ Error in getAllAdminCertificates:`, error);
       next(error);
     }
   }
@@ -237,22 +261,45 @@ export class CertificateController {
   static async getDashboardStats(req: Request, res: Response, next: NextFunction) {
     try {
       const adminAddress = req.query.address as string;
-      
+
       if (!adminAddress) {
+        console.error(`[CertificateController] ❌ Admin address is required for stats`);
         return res.status(400).json({
           success: false,
           message: "Admin address is required"
         });
       }
 
-      // Get all test mode certificates (admin issued)
-      const testCerts = (BlockchainService as any).getAllTestCertificates?.() || [];
-      const totalCerts = testCerts.length;
-      const validCerts = testCerts.filter((c) => !c.isRevoked).length;
-      const revokedCerts = testCerts.filter((c) => c.isRevoked).length;
-      const uniqueStudents = new Set(testCerts.map((c) => c.studentAddress)).size;
+      console.log(`[CertificateController] 📈 Fetching dashboard stats for admin: ${adminAddress}`);
 
-      // Return stats including test mode certificates
+      // Get certificates issued by this admin
+      const adminCerts = BlockchainService.getCertificatesByAdmin(adminAddress);
+
+      console.log(`[CertificateController] Found ${adminCerts.length} total certificates for admin`);
+
+      const totalCerts = adminCerts.length;
+      const validCerts = adminCerts.filter((c) => !c.isRevoked).length;
+      const revokedCerts = adminCerts.filter((c) => c.isRevoked).length;
+      const uniqueStudents = new Set(adminCerts.map((c) => c.studentAddress)).size;
+
+      // Get recent issuances (last 5)
+      const recentIssuances = adminCerts
+        .sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime())
+        .slice(0, 5)
+        .map((cert: any) => ({
+          id: cert.id || cert.certificateId || '',
+          certificateId: cert.certificateId || '',
+          studentName: cert.studentName || 'Unknown',
+          programName: cert.programName || '',
+          issueDate: cert.issueDate || new Date().toISOString(),
+          certificateData: {
+            title: cert.certificateId || 'Certificate',
+            description: cert.programName || '',
+          },
+        }));
+
+      console.log(`[CertificateController] ✅ Stats: Total=${totalCerts}, Valid=${validCerts}, Revoked=${revokedCerts}, Students=${uniqueStudents}`);
+
       res.status(200).json({
         success: true,
         data: {
@@ -263,11 +310,13 @@ export class CertificateController {
           verificationCount: totalCerts,
           issuedByMe: totalCerts,
           totalStudents: uniqueStudents,
-          recentIssuances: testCerts.slice(-5),
-          testModeWarning: totalCerts > 0 ? "TEST MODE: Data not on blockchain. Fund wallet for real blockchain." : undefined
+          recentIssuances: recentIssuances,
+          adminAddress: adminAddress,
+          testModeWarning: totalCerts > 0 && adminCerts.some((c: any) => c.isTestMode) ? "⚠️ TEST MODE: Some certificates are in test mode (not on blockchain). Fund wallet at https://faucet.polygon.technology/ for real blockchain." : undefined
         }
       });
     } catch (error) {
+      console.error(`[CertificateController] ❌ Error in getDashboardStats:`, error);
       next(error);
     }
   }

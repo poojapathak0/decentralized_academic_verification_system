@@ -1,10 +1,16 @@
-import { contract } from "../config/blockchain";
+import { contract, wallet } from "../config/blockchain";
 
 // Test mode storage
 const testCertificates: { [key: string]: any } = {};
 // Track all issued certificates (both test mode and blockchain)
 const issuedCertificates: { [key: string]: any } = {};
+// Track certificates by admin address
+const adminCertificates: { [adminAddress: string]: any[] } = {};
+// Track certificates by student address
+const studentCertificates: { [studentAddress: string]: any[] } = {};
 let certificateCounter = 1000;
+
+const ADMIN_ADDRESS = wallet.address.toLowerCase();
 
 export class BlockchainService {
   /**
@@ -48,7 +54,7 @@ export class BlockchainService {
       }
       
       // Store blockchain certificate for later retrieval
-      issuedCertificates[certificateId] = {
+      const certData = {
         id: certificateId,
         studentAddress,
         ipfsHash,
@@ -63,9 +69,31 @@ export class BlockchainService {
         blockNumber: receipt.blockNumber,
         transactionHash: receipt.hash,
         isTestMode: false,
+        adminAddress: ADMIN_ADDRESS,
       };
-      
-      console.log(`[BlockchainService] Certificate issued successfully. Tx: ${receipt.hash}`);
+
+      issuedCertificates[certificateId] = certData;
+
+      // Track by admin address
+      if (!adminCertificates[ADMIN_ADDRESS]) {
+        adminCertificates[ADMIN_ADDRESS] = [];
+      }
+      adminCertificates[ADMIN_ADDRESS].push(certData);
+
+      // Track by student address
+      const normalizedStudentAddress = studentAddress.toLowerCase();
+      if (!studentCertificates[normalizedStudentAddress]) {
+        studentCertificates[normalizedStudentAddress] = [];
+      }
+      studentCertificates[normalizedStudentAddress].push(certData);
+
+      console.log(`[BlockchainService] ✅ Certificate issued successfully`);
+      console.log(`  - Certificate ID: ${certificateId}`);
+      console.log(`  - Student: ${studentName} (${studentAddress})`);
+      console.log(`  - Admin: ${ADMIN_ADDRESS}`);
+      console.log(`  - Transaction: ${receipt.hash}`);
+      console.log(`  - Total certs by admin: ${adminCertificates[ADMIN_ADDRESS].length}`);
+      console.log(`  - Total certs for student: ${studentCertificates[normalizedStudentAddress].length}`);
       return receipt;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -124,13 +152,32 @@ export class BlockchainService {
       isRevoked: false,
       hash: mockHash,
       isTestMode: true,
+      adminAddress: ADMIN_ADDRESS,
     };
 
     testCertificates[testCertId] = certData;
 
-    console.log(`[BlockchainService] TEST MODE Certificate created: ${testCertId}`);
-    console.log(`[BlockchainService] ⚠️  WARNING: This certificate is NOT stored on blockchain`);
-    console.log(`[BlockchainService] To use real blockchain, fund wallet: https://faucet.polygon.technology/`);
+    // Track by admin address
+    if (!adminCertificates[ADMIN_ADDRESS]) {
+      adminCertificates[ADMIN_ADDRESS] = [];
+    }
+    adminCertificates[ADMIN_ADDRESS].push(certData);
+
+    // Track by student address
+    const normalizedStudentAddress = studentAddress.toLowerCase();
+    if (!studentCertificates[normalizedStudentAddress]) {
+      studentCertificates[normalizedStudentAddress] = [];
+    }
+    studentCertificates[normalizedStudentAddress].push(certData);
+
+    console.log(`[BlockchainService] 🧪 TEST MODE Certificate created`);
+    console.log(`  - Certificate ID: ${certificateId}`);
+    console.log(`  - Student: ${studentName} (${studentAddress})`);
+    console.log(`  - Admin: ${ADMIN_ADDRESS}`);
+    console.log(`  - Total certs by admin: ${adminCertificates[ADMIN_ADDRESS].length}`);
+    console.log(`  - Total certs for student: ${studentCertificates[normalizedStudentAddress].length}`);
+    console.log(`  - ⚠️  WARNING: This certificate is NOT stored on blockchain`);
+    console.log(`  - To use real blockchain, fund wallet: https://faucet.polygon.technology/`);
 
     return {
       hash: mockHash,
@@ -148,17 +195,6 @@ export class BlockchainService {
     return Object.values(testCertificates).filter(
       (cert) => cert.studentAddress === studentAddress
     );
-  }
-
-  /**
-   * Get all test mode certificates (for admin dashboard)
-   */
-  static getAllTestCertificates() {
-    // Return both test mode and blockchain-issued certificates
-    return [
-      ...Object.values(testCertificates),
-      ...Object.values(issuedCertificates)
-    ];
   }
 
   /**
@@ -236,21 +272,81 @@ export class BlockchainService {
   }
 
   /**
-   * Get student certificates
+   * Get student certificates (from memory + blockchain)
    */
   static async getCertificatesByStudent(studentAddress: string) {
     try {
-      console.log(`[BlockchainService] Fetching certificates for ${studentAddress}...`);
-      
+      console.log(`[BlockchainService] 📚 Fetching certificates for student: ${studentAddress}`);
+
       if (!studentAddress || !studentAddress.startsWith('0x')) {
         throw new Error(`Invalid student address: ${studentAddress}`);
       }
-      
-      return await contract.getCertificatesByStudent(studentAddress);
+
+      // First check in-memory test mode certificates
+      const normalizedAddress = studentAddress.toLowerCase();
+      const memoryBasedCerts = studentCertificates[normalizedAddress] || [];
+      console.log(`[BlockchainService] Found ${memoryBasedCerts.length} certificates in memory for student ${normalizedAddress}`);
+
+      // If we have certificates in memory, return them (test mode)
+      if (memoryBasedCerts.length > 0) {
+        console.log(`[BlockchainService] ✅ Returning ${memoryBasedCerts.length} certificates from memory (test mode)`);
+        return memoryBasedCerts;
+      }
+
+      // Otherwise try blockchain (for real blockchain mode)
+      try {
+        console.log(`[BlockchainService] No certificates in memory, trying blockchain...`);
+        const blockchainCerts = await contract.getCertificatesByStudent(studentAddress);
+        console.log(`[BlockchainService] ✅ Found ${blockchainCerts.length} certificates on blockchain`);
+        return blockchainCerts;
+      } catch (blockchainError) {
+        const errorMsg = blockchainError instanceof Error ? blockchainError.message : 'Unknown error';
+        console.log(`[BlockchainService] Blockchain query failed: ${errorMsg}`);
+        // Return empty array instead of crashing
+        return [];
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[BlockchainService] Error fetching student certificates: ${errorMessage}`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get certificates by admin address
+   */
+  static getCertificatesByAdmin(adminAddress: string) {
+    try {
+      const normalizedAddress = adminAddress.toLowerCase();
+      console.log(`[BlockchainService] 📊 Fetching certificates for admin: ${normalizedAddress}`);
+
+      if (!adminAddress || !adminAddress.startsWith('0x')) {
+        throw new Error(`Invalid admin address: ${adminAddress}`);
+      }
+
+      const certs = adminCertificates[normalizedAddress] || [];
+      console.log(`[BlockchainService] Found ${certs.length} certificates for admin ${normalizedAddress}`);
+
+      return certs;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[BlockchainService] Error fetching admin certificates: ${errorMessage}`, error);
       throw error;
     }
+  }
+
+  /**
+   * Get all test certificates (for backward compatibility)
+   */
+  static getAllTestCertificates() {
+    console.log(`[BlockchainService] 📋 Getting all certificates (test mode + blockchain)`);
+    console.log(`  - Test mode certs: ${Object.keys(testCertificates).length}`);
+    console.log(`  - Blockchain certs: ${Object.keys(issuedCertificates).length}`);
+
+    // Return both test mode and blockchain-issued certificates
+    return [
+      ...Object.values(testCertificates),
+      ...Object.values(issuedCertificates)
+    ];
   }
 }

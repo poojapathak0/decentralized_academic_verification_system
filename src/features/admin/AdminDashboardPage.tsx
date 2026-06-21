@@ -11,7 +11,7 @@ import { CertificateCard } from '@/components/shared/CertificateCard'
 import { Certificate, AdminStats } from '@/types'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
-import { Plus } from 'lucide-react'
+import { Plus, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export function AdminDashboardPage() {
@@ -21,6 +21,8 @@ export function AdminDashboardPage() {
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showIssueModal, setShowIssueModal] = useState(false)
+  const [selectedCert, setSelectedCert] = useState<Certificate | null>(null)
+  const [showViewModal, setShowViewModal] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -28,34 +30,64 @@ export function AdminDashboardPage() {
 
   const loadData = async () => {
     setIsLoading(true)
-    
-    // Use test admin address if wallet is not connected (for demo/testing)
+
+    // Use connected wallet or environment admin address
+    // In test mode, we use a consistent address so the backend can track certificates
     const adminAddress = wallet?.address || '0xe54275B5142200caEe678788362C4328D6D1dCB2'
-    
+
+    console.log(`[AdminDashboard] 📊 Loading data for admin: ${adminAddress}`)
+
     try {
       const [statsRes, certsRes] = await Promise.all([
         api.admin.getDashboardStats(adminAddress),
         api.admin.listCertificates(adminAddress),
       ])
 
+      console.log(`[AdminDashboard] Stats response:`, statsRes)
+      console.log(`[AdminDashboard] Certificates response:`, certsRes)
+
       if (statsRes.success && statsRes.data) {
         setStats(statsRes.data)
+        console.log(`[AdminDashboard] ✅ Loaded ${statsRes.data.totalCertificates} total certificates`)
       } else if (!statsRes.success) {
-        console.error('Dashboard stats error:', statsRes.error)
+        console.error('[AdminDashboard] Dashboard stats error:', statsRes.error)
         toast.error(statsRes.error?.message || 'Failed to load dashboard stats')
       }
 
       if (certsRes.success && certsRes.data) {
         setCertificates(certsRes.data.data)
+        console.log(`[AdminDashboard] ✅ Loaded ${certsRes.data.data.length} certificates for display`)
       } else if (!certsRes.success) {
-        console.error('Certificates error:', certsRes.error)
+        console.error('[AdminDashboard] Certificates error:', certsRes.error)
         toast.error(certsRes.error?.message || 'Failed to load certificates')
       }
     } catch (error) {
-      console.error('Dashboard loading error:', error)
+      console.error('[AdminDashboard] Dashboard loading error:', error)
       toast.error('Failed to load dashboard data')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleViewCertificate = (cert: Certificate) => {
+    console.log('[AdminDashboard] 👁️ Viewing certificate:', cert.id)
+    setSelectedCert(cert)
+    setShowViewModal(true)
+  }
+
+  const handleDownloadCertificate = async (cert: Certificate) => {
+    try {
+      console.log('[AdminDashboard] 📥 Downloading certificate:', cert.id)
+      const result = await api.certificates.download(cert.id)
+      if (result.success && result.data) {
+        window.open(result.data.downloadUrl, '_blank')
+        toast.success('Certificate download started!')
+      } else {
+        toast.error('Certificate download not available')
+      }
+    } catch (error) {
+      console.error('[AdminDashboard] Download error:', error)
+      toast.error('Failed to download certificate')
     }
   }
 
@@ -181,6 +213,8 @@ export function AdminDashboardPage() {
                     <CertificateCard
                       certificate={cert}
                       showActions={true}
+                      onView={handleViewCertificate}
+                      onDownload={handleDownloadCertificate}
                       onRevoke={async (c) => {
                         try {
                           await api.admin.revoke(c.id)
@@ -219,6 +253,19 @@ export function AdminDashboardPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* View Certificate Modal */}
+        {selectedCert && (
+          <CertificateDetailModal
+            certificate={selectedCert}
+            isOpen={showViewModal}
+            onClose={() => {
+              setShowViewModal(false)
+              setSelectedCert(null)
+            }}
+            onDownload={handleDownloadCertificate}
+          />
+        )}
 
         {/* Issue Certificate Modal */}
         {showIssueModal && (
@@ -577,6 +624,166 @@ function IssueCertificateModal({
             </Button>
           </div>
         </form>
+      </motion.div>
+    </div>
+  )
+}
+
+function CertificateDetailModal({
+  certificate,
+  isOpen,
+  onClose,
+  onDownload,
+}: {
+  certificate: Certificate
+  isOpen: boolean
+  onClose: () => void
+  onDownload: (cert: Certificate) => void
+}) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white dark:bg-accent-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div className="p-6 border-b border-accent-200 dark:border-accent-700 flex justify-between items-center sticky top-0 bg-white dark:bg-accent-800 z-10">
+          <h2 className="text-2xl font-bold text-accent-900 dark:text-white">
+            Certificate Details
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-accent-500 hover:text-accent-700 dark:hover:text-accent-300 text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Status Badge */}
+          <div className="flex items-center justify-between">
+            <Badge variant={certificate.status === 'revoked' ? 'error' : 'success'}>
+              {certificate.status === 'revoked' ? 'Revoked' : 'Valid'}
+            </Badge>
+            <span className="text-sm text-accent-500">
+              ID: {certificate.id.slice(-12)}
+            </span>
+          </div>
+
+          {/* Title */}
+          <div>
+            <p className="text-sm text-accent-600 dark:text-accent-400 mb-1">Title</p>
+            <h3 className="text-2xl font-bold text-accent-900 dark:text-white">
+              {certificate.certificateData.title}
+            </h3>
+          </div>
+
+          {/* Student Information */}
+          <div className="bg-accent-50 dark:bg-accent-700/30 rounded-lg p-4 space-y-3">
+            <h4 className="font-semibold text-accent-900 dark:text-white">Student Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-accent-600 dark:text-accent-400">Name</p>
+                <p className="font-medium text-accent-900 dark:text-white">
+                  {certificate.studentName}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-accent-600 dark:text-accent-400">Wallet Address</p>
+                <p className="font-mono text-sm text-accent-900 dark:text-white break-all">
+                  {certificate.studentAddress}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Program Information */}
+          <div className="bg-accent-50 dark:bg-accent-700/30 rounded-lg p-4 space-y-3">
+            <h4 className="font-semibold text-accent-900 dark:text-white">Program Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-accent-600 dark:text-accent-400">Program</p>
+                <p className="font-medium text-accent-900 dark:text-white">
+                  {certificate.certificateData.program}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-accent-600 dark:text-accent-400">Institution</p>
+                <p className="font-medium text-accent-900 dark:text-white">
+                  {certificate.certificateData.institution}
+                </p>
+              </div>
+              {certificate.certificateData.grade && (
+                <div>
+                  <p className="text-sm text-accent-600 dark:text-accent-400">Grade</p>
+                  <p className="font-medium text-accent-900 dark:text-white">
+                    {certificate.certificateData.grade}
+                  </p>
+                </div>
+              )}
+              {certificate.certificateData.credits && (
+                <div>
+                  <p className="text-sm text-accent-600 dark:text-accent-400">Credits</p>
+                  <p className="font-medium text-accent-900 dark:text-white">
+                    {certificate.certificateData.credits}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dates */}
+          <div className="bg-accent-50 dark:bg-accent-700/30 rounded-lg p-4 space-y-3">
+            <h4 className="font-semibold text-accent-900 dark:text-white">Dates</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-accent-600 dark:text-accent-400">Issue Date</p>
+                <p className="font-medium text-accent-900 dark:text-white">
+                  {new Date(certificate.issueDate).toLocaleDateString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-accent-600 dark:text-accent-400">Completion Date</p>
+                <p className="font-medium text-accent-900 dark:text-white">
+                  {certificate.certificateData.completionDate}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          {certificate.certificateData.description && (
+            <div>
+              <p className="text-sm text-accent-600 dark:text-accent-400 mb-2">Description</p>
+              <p className="text-accent-900 dark:text-white">
+                {certificate.certificateData.description}
+              </p>
+            </div>
+          )}
+
+          {/* IPFS Hash */}
+          {certificate.ipfsHash && (
+            <div>
+              <p className="text-sm text-accent-600 dark:text-accent-400 mb-2">IPFS Hash</p>
+              <p className="font-mono text-xs text-accent-900 dark:text-white break-all bg-accent-100 dark:bg-accent-700 p-3 rounded">
+                {certificate.ipfsHash}
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 justify-end pt-4 border-t border-accent-200 dark:border-accent-700">
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+            <Button onClick={() => onDownload(certificate)} className="flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              Download Certificate
+            </Button>
+          </div>
+        </div>
       </motion.div>
     </div>
   )

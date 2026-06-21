@@ -222,10 +222,36 @@ export const certificateApi = {
   },
 
   async download(certificateId: string): Promise<ApiResponse<{ downloadUrl: string }>> {
+    // Get certificate data first to retrieve IPFS hash
+    try {
+      const certResult = await fetchAPI<any>(`/certificates/${certificateId}`)
+
+      if (certResult.success && certResult.data) {
+        const ipfsHash = certResult.data.ipfsHash || certResult.data.pdfUrl
+
+        if (ipfsHash && ipfsHash.startsWith('Qm')) {
+          // Valid IPFS hash - return IPFS gateway link
+          const gateway = (import.meta as any).env.VITE_IPFS_GATEWAY || 'https://ipfs.io/ipfs'
+          const downloadUrl = `${gateway}/${ipfsHash}`
+
+          console.log(`[API] Download URL for ${certificateId}: ${downloadUrl}`)
+
+          return {
+            success: true,
+            data: { downloadUrl },
+            timestamp: new Date().toISOString(),
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[API] Error fetching certificate for download:', error)
+    }
+
+    // Fallback: return verification page
     return {
       success: true,
       data: {
-        downloadUrl: `${API_URL}/certificates/${certificateId}/download`,
+        downloadUrl: `${window.location.origin}/verify/${certificateId}`,
       },
       timestamp: new Date().toISOString(),
     }

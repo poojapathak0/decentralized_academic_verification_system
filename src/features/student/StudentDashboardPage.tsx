@@ -27,14 +27,19 @@ export function StudentDashboardPage() {
 
   const loadCertificates = async () => {
     setIsLoading(true)
-    
+
     if (!wallet) {
+      console.log('[StudentDashboard] ⚠️ No wallet connected')
       setIsLoading(false)
       return
     }
 
+    console.log(`[StudentDashboard] 📚 Loading certificates for: ${wallet.address}`)
+
     try {
       const result = await api.certificates.getByStudent(wallet.address)
+      console.log('[StudentDashboard] API Response:', result)
+
       if (result.success && result.data) {
         // FIXED: Ensure status is properly set from isRevoked flag
         const certs = result.data.data.map((cert: any) => ({
@@ -42,16 +47,20 @@ export function StudentDashboardPage() {
           status: cert.status || (cert.isRevoked ? 'revoked' : 'valid'),
         }))
         setCertificates(certs)
-        
+        console.log(`[StudentDashboard] ✅ Loaded ${certs.length} certificates`)
+
         // Check for revoked certificates and notify user
         const revokedCerts = certs.filter((c: any) => c.status === 'revoked' || c.isRevoked)
         if (revokedCerts.length > 0) {
           toast.error(`⚠️ ${revokedCerts.length} certificate(s) have been revoked by your institution`)
         }
+      } else {
+        console.error('[StudentDashboard] API returned success=false:', result.error)
+        toast.error(result.error?.message || 'Failed to load certificates')
       }
     } catch (error) {
+      console.error('[StudentDashboard] Error loading certificates:', error)
       toast.error('Failed to load certificates')
-      console.error(error)
     } finally {
       setIsLoading(false)
     }
@@ -59,12 +68,19 @@ export function StudentDashboardPage() {
 
   const handleDownload = async (cert: Certificate) => {
     try {
+      console.log(`[StudentDashboard] 📥 Downloading certificate: ${cert.id}`)
       const result = await api.certificates.download(cert.id)
+      console.log('[StudentDashboard] Download response:', result)
+
       if (result.success && result.data) {
+        console.log(`[StudentDashboard] ✅ Opening download URL: ${result.data.downloadUrl}`)
         window.open(result.data.downloadUrl, '_blank')
-        toast.success('Certificate downloaded!')
+        toast.success('Certificate downloading...')
+      } else {
+        toast.error('Failed to get download URL')
       }
     } catch (error) {
+      console.error('[StudentDashboard] Download error:', error)
       toast.error('Failed to download certificate')
     }
   }
