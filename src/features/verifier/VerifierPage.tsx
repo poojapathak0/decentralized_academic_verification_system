@@ -126,35 +126,65 @@ export function VerifierPage() {
     setIsLoading(true)
     setVerificationResult(null)
 
-    // TEMPORARY MOCK — remove before final demo
-    setVerificationResult({
-      isValid: true,
-      status: CertificateStatus.VALID,
-      message: 'Certificate is valid and has not been tampered with.',
-      verifiedAt: new Date().toISOString(),
-      certificate: {
-        id: trimmed,
-        studentName: 'Test Student',
-        issuerWallet: '0xABC0000000000000000000000000000000000123',
-        studentWallet: '0xDEF0000000000000000000000000000000000456',
-        issueDate: '2026-01-15',
-        expiryDate: undefined,
-        issuer: 'Kathmandu University',
-        studentId: 'stu-001',
-        status: CertificateStatus.VALID,
-        createdAt: '2026-01-15',
-        updatedAt: '2026-01-15',
-        certificateData: {
-          title: 'Bachelor of Computer Science',
-          institution: 'Kathmandu University',
-          program: 'B.Sc. CSIT',
-          completionDate: '2026-01-15',
-          description: 'Awarded for completion of B.Sc. CSIT program.',
-        }
+    try {
+      const response = await api.certificates.verify(trimmed)
+
+      if (!response.success || !response.data) {
+        setVerificationResult({
+          isValid: false,
+          status: CertificateStatus.PENDING,
+          message: response.error?.message || 'Certificate not found.',
+          verifiedAt: new Date().toISOString(),
+        })
+        return
       }
-    })
-    setIsLoading(false)
-    return
+
+      const raw = response.data as any
+      const cert = raw.certificate
+      const isValid: boolean = raw.isValid
+
+      setVerificationResult({
+        isValid,
+        status: isValid ? CertificateStatus.VALID : CertificateStatus.REVOKED,
+        message: isValid
+          ? 'Certificate is valid and has not been tampered with.'
+          : 'This certificate has been revoked or is invalid.',
+        verifiedAt: new Date().toISOString(),
+        certificate: cert
+          ? {
+              id: trimmed,
+              studentName: cert.studentName ?? 'Unknown',
+              issuerWallet: cert.issuerAddress ?? '',
+              studentWallet: cert.studentAddress ?? '',
+              issueDate: cert.graduationDate ?? cert.issueDate ?? '',
+              expiryDate: undefined,
+              issuer: cert.institutionName ?? '',
+              studentId: trimmed,
+              status: isValid ? CertificateStatus.VALID : CertificateStatus.REVOKED,
+              createdAt: cert.graduationDate ?? new Date().toISOString(),
+              updatedAt: cert.graduationDate ?? new Date().toISOString(),
+              ipfsHash: cert.ipfsHash,
+              certificateData: {
+                title: cert.programName ?? 'Academic Certificate',
+                institution: cert.institutionName ?? '',
+                program: cert.programName ?? '',
+                completionDate: cert.graduationDate ?? '',
+                description: '',
+              },
+            }
+          : undefined,
+      })
+    } catch (error) {
+      toast.error('Verification failed')
+      setVerificationResult({
+        isValid: false,
+        status: CertificateStatus.PENDING,
+        message: 'An error occurred during verification.',
+        verifiedAt: new Date().toISOString(),
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
   // ── Auto-fill + auto-verify when URL has /verify/:certificateId ────────────

@@ -183,10 +183,9 @@ export const certificateApi = {
 // API functions for admin
 export const adminApi = {
   async issue(payload: IssueCertificatePayload): Promise<ApiResponse<IssuanceResult>> {
-    // First upload to IPFS
-    const ipfsHash = await this.uploadCertificatePDF(payload.pdfUrl || '')
+    const ipfsHash = await this.uploadCertificatePDF(payload.certificateImage || null)
 
-    return fetchAPI<IssuanceResult>('/certificates/issue', {
+    const result = await fetchAPI<IssuanceResult>('/certificates/issue', {
       method: 'POST',
       body: JSON.stringify({
         studentAddress: payload.studentWallet,
@@ -198,15 +197,23 @@ export const adminApi = {
         certificateId: `cert-${Date.now()}`,
       }),
     })
+
+    if (result.success && result.data) {
+      result.data.qrCode = await qrCodeApi.generateCertificateQRCode(result.data.certificateId)
+    }
+
+    return result
   },
 
-  async uploadCertificatePDF(_filePath: string): Promise<string> {
+  async uploadCertificatePDF(file: File | null): Promise<string> {
     try {
       const formData = new FormData()
-      // Note: In production, you would pass an actual file object here
-      // For now, we'll create a placeholder
-      const blob = new Blob(['Certificate PDF content'], { type: 'application/pdf' })
-      formData.append('file', blob, 'certificate.pdf')
+      if (file) {
+        formData.append('file', file)
+      } else {
+        const blob = new Blob(['placeholder'], { type: 'application/pdf' })
+        formData.append('file', blob, 'placeholder.pdf')
+      }
 
       const response = await fetch(`${API_URL}/upload`, {
         method: 'POST',
@@ -214,10 +221,10 @@ export const adminApi = {
       })
 
       const data = await response.json()
-      return data.ipfsHash || ''
+      return data.ipfsHash || 'QmPlaceholder'
     } catch (error) {
       console.error('Upload error:', error)
-      return ''
+      return 'QmPlaceholder'
     }
   },
 

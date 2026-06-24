@@ -325,18 +325,9 @@ function IssueCertificateModal({
     setIsLoading(true)
 
     try {
-      // If file is uploaded, we'll handle it (in real implementation, upload to IPFS)
-      let pdfUrl = formData.pdfUrl
-      if (certificateFile) {
-        toast.loading('Uploading certificate to IPFS...')
-        // In production, upload to IPFS here
-        pdfUrl = `ipfs://${certificateFile.name}`
-        toast.dismiss()
-      }
-
       const result = await api.admin.issue({
         ...formData,
-        pdfUrl,
+        certificateImage: certificateFile || undefined,
         credits: parseInt(formData.credits.toString()) || 120,
       })
 
@@ -344,7 +335,7 @@ function IssueCertificateModal({
         toast.success('Certificate issued successfully!')
         onSuccess()
       } else {
-        toast.error('Failed to issue certificate')
+        toast.error(result.error?.message || 'Failed to issue certificate')
       }
     } catch (error) {
       toast.error('Error issuing certificate')

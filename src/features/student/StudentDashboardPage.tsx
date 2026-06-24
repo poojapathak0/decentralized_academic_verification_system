@@ -299,6 +299,7 @@ function ShareCertificateModal({
   certificate: Certificate
 }) {
   const certUrl = `${window.location.origin}/verify/${certificate.id}`
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(certUrl)}`
 
   const handleCopyLink = async () => {
     try {
@@ -306,12 +307,6 @@ function ShareCertificateModal({
       toast.success('Link copied to clipboard!')
     } catch {
       toast.error('Failed to copy link')
-    }
-  }
-
-  const handleShareQR = () => {
-    if (certificate.qrCode) {
-      window.open(certificate.qrCode, '_blank')
     }
   }
 
@@ -335,7 +330,7 @@ function ShareCertificateModal({
         </div>
 
         {/* Share Options */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           {/* Copy Link */}
           <div>
             <label className="text-sm font-medium text-accent-900 dark:text-white mb-2 block">
@@ -354,30 +349,30 @@ function ShareCertificateModal({
             </div>
           </div>
 
-          {/* QR Code */}
-          {certificate.qrCode && (
-            <div>
-              <label className="text-sm font-medium text-accent-900 dark:text-white mb-2 block">
-                QR Code
-              </label>
-              <div className="bg-white p-4 rounded-lg border-2 border-accent-200 dark:border-accent-700 flex items-center justify-center">
-                <img
-                  src={certificate.qrCode}
-                  alt="Certificate QR Code"
-                  className="w-40 h-40"
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleShareQR}
-                className="w-full mt-3"
-              >
+          {/* QR Code — always generated from cert ID */}
+          <div>
+            <label className="text-sm font-medium text-accent-900 dark:text-white mb-2 block">
+              QR Code
+            </label>
+            <div className="bg-white p-4 rounded-lg border-2 border-accent-200 dark:border-accent-700 flex items-center justify-center">
+              <img
+                src={qrImageUrl}
+                alt="Certificate QR Code"
+                className="w-40 h-40"
+              />
+            </div>
+            <a
+              href={qrImageUrl}
+              download={`certificate-${certificate.id}-qr.png`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button size="sm" variant="outline" className="w-full mt-3">
                 <Download className="w-4 h-4 mr-2" />
                 Download QR Code
               </Button>
-            </div>
-          )}
+            </a>
+          </div>
         </div>
 
         {/* Close */}
